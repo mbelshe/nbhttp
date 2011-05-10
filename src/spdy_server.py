@@ -93,13 +93,17 @@ import push_tcp
 from spdy_common import SpdyMessageHandler, CTL_SYN_REPLY, FLAG_NONE, FLAG_FIN
 from http_common import get_hdr, dummy
 
+logging.basicConfig()
+log = logging.getLogger('server')
+log.setLevel(logging.INFO)
+
 # FIXME: assure that the connection isn't closed before reading the entire req body
 
 class SpdyServer:
     "An asynchronous SPDY server."
-    def __init__(self, host, port, request_handler, log=None):
+    def __init__(self, host, port, certfile, keyfile, request_handler, log=None):
         self.request_handler = request_handler
-        self.server = push_tcp.create_server(host, port, self.handle_connection)
+        self.server = push_tcp.create_server(host, port, certfile, keyfile, self.handle_connection)
         self.log = log
 
     def handle_connection(self, tcp_conn):
@@ -187,11 +191,13 @@ class SpdyServerConnection(SpdyMessageHandler):
 
     def _input_body(self, stream_id, chunk):
         "Process a request body chunk from the wire."
-        self._streams[stream_id][0](chunk)
+        if self._streams.has_key(stream_id):
+            self._streams[stream_id][0](chunk)
 
     def _input_end(self, stream_id):
         "Indicate that the request body is complete."
-        self._streams[stream_id][1](None)
+        if self._streams.has_key(stream_id):
+            self._streams[stream_id][1](None)
         # TODO: delete stream if output side is half-closed.
 
     def _input_error(self, stream_id, err, detail=None):
@@ -201,7 +207,8 @@ class SpdyServerConnection(SpdyMessageHandler):
         if self._tcp_conn:
             self._tcp_conn.close()
             self._tcp_conn = None
-        self._streams[stream_id][1](err)
+        if self._streams.has_key(stream_id):
+            self._streams[stream_id][1](err)
 
     # TODO: re-evaluate if this is necessary in SPDY
     def _handle_error(self, err, detail=None):
